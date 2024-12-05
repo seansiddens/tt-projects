@@ -27,6 +27,8 @@ endif()
 
 project(ml-framework-cpp)
 
+add_definitions(-DPROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}")
+
 CHECK_COMPILERS()
 
 
