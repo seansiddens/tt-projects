@@ -70,9 +70,10 @@ target_link_libraries(sample_lib PUBLIC
     tt_metal
     pthread
     Python::Python
+    fmt::fmt
     $ENV{TT_METAL_HOME}/build/lib/_ttnn.so
     $ENV{TT_METAL_HOME}/build/lib/libdevice.so
-    $ENV{TT_METAL_HOME}/build/lib/libfmt.so
+    # $ENV{TT_METAL_HOME}/build/lib/libfmt.so
     $ENV{TT_METAL_HOME}/build/lib/libnng.so.1
 )
 

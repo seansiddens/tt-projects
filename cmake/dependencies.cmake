@@ -66,3 +66,14 @@ CPMAddPackage(
   VERSION 1.13.0
   OPTIONS "INSTALL_GTEST OFF"
 )
+
+CPMAddPackage(
+    NAME fmt
+    GITHUB_REPOSITORY fmtlib/fmt
+    GIT_TAG 10.1.1  # You can adjust version as needed
+    OPTIONS 
+        "FMT_INSTALL OFF"
+        "FMT_TEST OFF"
+        "FMT_DOC OFF"
+        "FMT_SYSTEM_HEADERS ON"
+)
