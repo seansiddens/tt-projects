@@ -56,7 +56,8 @@ int main(int argc, char **argv) {
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(dram_config.size, 10, seed);
-    for (auto val : unpack_uint32_vec_into_bfloat16_vec(src0_vec)) {
+    std::vector<bfloat16> in_b16_vec = unpack_uint32_vec_into_bfloat16_vec(src0_vec);
+    for (auto val : in_b16_vec) {
         std::cout << val.to_float() << " ";
     }
     std::cout << std::endl;
@@ -112,13 +113,23 @@ int main(int argc, char **argv) {
     std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
-    std::vector<bfloat16> bfloat_vec = unpack_uint32_vec_into_bfloat16_vec(result_vec);
+    std::vector<bfloat16> out_b16_vec = unpack_uint32_vec_into_bfloat16_vec(result_vec);
 
     std::cout << "Bfloat data:\n";
-    for (auto val : bfloat_vec) {
+    for (auto val : out_b16_vec) {
         std::cout << val.to_float() << " ";
     }
     std::cout << std::endl;
+
+    // Validate output of gather operation.
+    // out[i] == in[idx[i]]
+    for (size_t i = 0; i < index_vec.size(); i++) {
+        auto index = index_vec[i];
+        auto input = in_b16_vec[i];
+        auto output = out_b16_vec[i];
+
+        is_close(input.to_float(), output.to_float());
+    }
 
     CloseDevice(device);
 }
