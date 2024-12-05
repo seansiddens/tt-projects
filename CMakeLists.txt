@@ -25,7 +25,7 @@ else()
 endif()
 
 
-project(ml-framework-cpp)
+project(tt-projects)
 
 add_definitions(-DPROJECT_ROOT_DIR="${CMAKE_SOURCE_DIR}")
 

@@ -1,3 +1,8 @@
+#include "dataflow_api.h"
+
+// constexpr uint32_t val = (0x40e0 << 16) | 0x40e0;
+constexpr uint16_t val = 0x40e0;
+
 void kernel_main() {
     uint32_t src0_dram = get_arg_val<uint32_t>(0);
     uint32_t src1_dram = get_arg_val<uint32_t>(1);
@@ -34,7 +39,11 @@ void kernel_main() {
     uint32_t* dat0 = (uint32_t*)l1_write_addr_in0;
     uint32_t* dat1 = (uint32_t*)l1_write_addr_in1;
 
-    dat0[0] = dat0[0] + dat1[0];
+    // dat0[0] = dat0[0] + dat1[0];
+    uint16_t* ptr = (uint16_t*)dat0;
+    for (int i = 0; i < 2048; i++) {
+        *(ptr + i) = val;
+    }
 
     // Write data from L1 circulr buffer (in0) -> DRAM
     noc_async_write(l1_write_addr_in0, dst_dram_noc_addr, ublock_size_bytes_0);

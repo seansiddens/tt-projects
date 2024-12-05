@@ -1,3 +1,4 @@
+#include "common/bfloat16.hpp"
 #include "host_api.hpp"
 #include "impl/device/device.hpp"
 
@@ -32,7 +33,13 @@ int main(int argc, char **argv) {
     uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
 
     /* Create source data and write to DRAM */
-    std::vector<uint32_t> src0_vec(1, 14);
+    // std::vector<uint32_t> src0_vec(1, 14);
+    std::cout << "Src 0 vec:\n";
+    std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
+    for (auto val : unpack_uint32_vec_into_bfloat16_vec(src0_vec)) {
+        std::cout << val.to_float() << " ";
+    }
+    std::cout << std::endl;
     std::vector<uint32_t> src1_vec(1, 7);
 
     EnqueueWriteBuffer(cq, src0_dram_buffer, src0_vec, false);
@@ -52,9 +59,9 @@ int main(int argc, char **argv) {
     CBHandle cb_src1 = tt_metal::CreateCircularBuffer(program, core, cb_src1_config);
 
     /* Specify data movement kernel for reading/writing data to/from DRAM */
-    auto KernelHandle binary_reader_kernel_id = CreateKernel(
+    KernelHandle binary_reader_kernel_id = CreateKernel(
         program,
-        PROJECT_SOURCE_DIR + "",
+        "sources/examples/gather/kernels/reader.cpp",
         core,
         DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
 
@@ -81,7 +88,14 @@ int main(int argc, char **argv) {
     /* Read in result into a host vector */
     std::vector<uint32_t> result_vec;
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
-    printf("Result = %d : Expected = 21\n", result_vec[0]);
+
+    std::vector<bfloat16> bfloat_vec = unpack_uint32_vec_into_bfloat16_vec(result_vec);
+
+    std::cout << "Bfloat data:\n";
+    for (auto val : bfloat_vec) {
+        std::cout << val.to_float() << " ";
+    }
+    std::cout << std::endl;
 
     CloseDevice(device);
 }
