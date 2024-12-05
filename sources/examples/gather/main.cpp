@@ -1,3 +1,5 @@
+#include <chrono>
+
 #include "common/bfloat16.hpp"
 #include "host_api.hpp"
 #include "impl/device/device.hpp"
@@ -51,7 +53,9 @@ int main(int argc, char **argv) {
 
     // std::vector<uint32_t> src0_vec(1, 14);
     std::cout << "Src 0 vec:\n";
-    std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
+    // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
+    auto seed = std::chrono::system_clock::now().time_since_epoch().count();
+    std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(dram_config.size, 10, seed);
     for (auto val : unpack_uint32_vec_into_bfloat16_vec(src0_vec)) {
         std::cout << val.to_float() << " ";
     }

@@ -49,9 +49,12 @@ void kernel_main() {
 
     // dat0[0] = dat0[0] + dat1[0];
     uint16_t* ptr = (uint16_t*)dat0;
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 1024; i++) {
         uint32_t index = dat1[i];
+        uint32_t offset = index * 2;  // Loading b16s
+        noc_async_read(src0_dram_noc_addr + offset, l1_write_addr_in0 + offset, 2);
     }
+    noc_async_read_barrier();
 
     // Write data from L1 circulr buffer (in0) -> DRAM
     noc_async_write(l1_write_addr_in0, dst_dram_noc_addr, ublock_size_bytes_0);
