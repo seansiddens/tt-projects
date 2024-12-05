@@ -13,11 +13,15 @@ void kernel_main() {
     uint32_t src1_dram_noc_y = get_arg_val<uint32_t>(6);
     uint32_t dst_dram_noc_x = get_arg_val<uint32_t>(7);
     uint32_t dst_dram_noc_y = get_arg_val<uint32_t>(8);
+    uint32_t index_dram = get_arg_val<uint32_t>(9);
+    uint32_t index_dram_noc_x = get_arg_val<uint32_t>(10);
+    uint32_t index_dram_noc_y = get_arg_val<uint32_t>(11);
 
     // NoC coords (x,y) depending on DRAM location on-chip
     uint64_t src0_dram_noc_addr = get_noc_addr(src0_dram_noc_x, src0_dram_noc_y, src0_dram);
     uint64_t src1_dram_noc_addr = get_noc_addr(src1_dram_noc_x, src1_dram_noc_y, src1_dram);
     uint64_t dst_dram_noc_addr = get_noc_addr(dst_dram_noc_x, dst_dram_noc_y, dst_dram);
+    uint64_t index_dram_noc_addr = get_noc_addr(index_dram_noc_x, index_dram_noc_y, index_dram);
 
     constexpr uint32_t cb_id_in0 = tt::CB::c_in0;  // index=0
     constexpr uint32_t cb_id_in1 = tt::CB::c_in1;  // index=1
@@ -30,9 +34,13 @@ void kernel_main() {
     uint32_t l1_write_addr_in1 = get_write_ptr(cb_id_in1);
 
     // Read data from DRAM -> L1 circular buffers
-    noc_async_read(src0_dram_noc_addr, l1_write_addr_in0, ublock_size_bytes_0);
-    noc_async_read_barrier();
-    noc_async_read(src1_dram_noc_addr, l1_write_addr_in1, ublock_size_bytes_1);
+    // noc_async_read(src0_dram_noc_addr, l1_write_addr_in0, ublock_size_bytes_0);
+    // noc_async_read_barrier();
+    // noc_async_read(src1_dram_noc_addr, l1_write_addr_in1, ublock_size_bytes_1);
+    // noc_async_read_barrier();
+
+    // Read index data from DRAM -> L1 circular buffer.
+    noc_async_read(index_dram_noc_addr, l1_write_addr_in1, 1024 * 4);
     noc_async_read_barrier();
 
     // Do simple add in RiscV core
@@ -41,8 +49,8 @@ void kernel_main() {
 
     // dat0[0] = dat0[0] + dat1[0];
     uint16_t* ptr = (uint16_t*)dat0;
-    for (int i = 0; i < 2048; i++) {
-        *(ptr + i) = val;
+    for (int i = 0; i < 2; i++) {
+        uint32_t index = dat1[i];
     }
 
     // Write data from L1 circulr buffer (in0) -> DRAM
