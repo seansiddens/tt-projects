@@ -43,8 +43,10 @@ void kernel_main() {
     // noc_async_read_barrier();
 
     for (uint32_t i = 0; i < index_ntiles; i++) {
+        // DPRINT << "tile " << i << "\n";
         // Read tile of index data from DRAM -> L1 circular buffer.
-        uint32_t data_buf_offset = i * data_tile_size;    // Offset into data DRAM buf for our current tile.
+        uint32_t data_buf_offset = i * data_tile_size;  // Offset into data DRAM buf for our current tile.
+        // DPRINT << "Data buf offset: " << data_buf_offset << "\n";
         uint32_t index_buf_offset = i * index_tile_size;  // Offset into idx DRAM buf for our current tile.
         noc_async_read(index_dram_noc_addr + index_buf_offset, l1_write_addr_index, index_tile_size);
         noc_async_read_barrier();
@@ -60,6 +62,7 @@ void kernel_main() {
             // DPRINT << "Index: " << index << "\n";
             // `index` is an index into the global input data DRAM buffer, we need to scale by the size of the data type
             // (sizeof(bfloat16) == 2)
+            // DPRINT << "i: " << i * 1024 + j << ", index: " << index << "\n";
             uint32_t index_offset = index * 2 * 16;  // 32 byte aligned.
             uint32_t l1_offset =
                 j * 2;  // Need to correclty index into the L1 where we are storing the data values gathered.

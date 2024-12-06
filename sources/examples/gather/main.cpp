@@ -20,14 +20,14 @@ int main(int argc, char **argv) {
     constexpr uint32_t b16_tile_size = 2 * tile_size;
     constexpr uint32_t u32_tile_size = 4 * tile_size;
 
-    uint32_t num_indices = 1024;
+    uint32_t num_indices = 1024 * 8;
     std::cout << "Number of indices: " << num_indices << "\n";
     uint32_t index_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
     std::cout << "index_ntiles: " << index_ntiles << "\n";
     uint32_t data_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
     std::cout << "data_ntiles: " << data_ntiles << "\n";
 
-    InterleavedBufferConfig data_dram_config{
+    InterleavedBufferConfig input_data_dram_config{
         .device = device,
         .size = b16_tile_size * data_ntiles * 32,  // accesses need to be 32 byte aligned,
         .page_size = b16_tile_size * data_ntiles * 32,
@@ -35,13 +35,14 @@ int main(int argc, char **argv) {
     InterleavedBufferConfig index_dram_config{
         .device = device,
         .size = u32_tile_size * index_ntiles,
-        .page_size = u32_tile_size,
+        .page_size = u32_tile_size * index_ntiles,  // TODO: Address calculation changes when crossing bank boundaries.
+                                                    // What are tradeoffs of page size?
         .buffer_type = BufferType::DRAM};
 
     std::shared_ptr<Buffer> index_buffer = CreateBuffer(index_dram_config);
-    std::shared_ptr<Buffer> src0_dram_buffer = CreateBuffer(data_dram_config);
-    std::shared_ptr<Buffer> src1_dram_buffer = CreateBuffer(data_dram_config);
-    std::shared_ptr<Buffer> dst_dram_buffer = CreateBuffer(data_dram_config);
+    std::shared_ptr<Buffer> src0_dram_buffer = CreateBuffer(input_data_dram_config);
+    std::shared_ptr<Buffer> src1_dram_buffer = CreateBuffer(input_data_dram_config);
+    std::shared_ptr<Buffer> dst_dram_buffer = CreateBuffer(input_data_dram_config);
 
     auto src0_dram_noc_coord = src0_dram_buffer->noc_coordinates();
     auto src1_dram_noc_coord = src1_dram_buffer->noc_coordinates();
@@ -66,8 +67,8 @@ int main(int argc, char **argv) {
     // index_vec[1] = 2;
     // index_vec[2] = 2;
     // index_vec[3] = 2;
-    // auto rng = std::mt19937{std::random_device{}()};  // or use time-based seed
-    // std::shuffle(index_vec.begin(), index_vec.end(), rng);
+    auto rng = std::mt19937{std::random_device{}()};  // or use time-based seed
+    std::shuffle(index_vec.begin(), index_vec.end(), rng);
     for (auto val : index_vec) {
         std::cout << val << " ";
     }
@@ -80,7 +81,7 @@ int main(int argc, char **argv) {
     // std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(data_dram_config.size, 10, seed);
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(data_dram_config.size, false);
     // std::vector<uint32_t> src0_vec = create_constant_vector_of_bfloat16(data_dram_config.size, -1.0F);
-    std::vector<bfloat16> in(data_dram_config.size / 2, bfloat16(-1.0F));
+    std::vector<bfloat16> in(input_data_dram_config.size / 2, bfloat16(-1.0F));
     // float count = 0.0F;
     for (size_t i = 0; i < in.size(); i++) {
         in[i] = bfloat16(float(i / 16));
@@ -94,7 +95,7 @@ int main(int argc, char **argv) {
 
     EnqueueWriteBuffer(cq, index_buffer, index_vec, true);
     EnqueueWriteBuffer(cq, src0_dram_buffer, src0_vec, true);
-    auto dst_initial_data = create_constant_vector_of_bfloat16(data_dram_config.size, -1.0F);
+    auto dst_initial_data = create_constant_vector_of_bfloat16(input_data_dram_config.size, -1.0F);
     EnqueueWriteBuffer(cq, dst_dram_buffer, dst_initial_data, true);
 
     /* Use L1 circular buffers to set input buffers */
@@ -153,11 +154,11 @@ int main(int argc, char **argv) {
     // }
 
     // std::cout << "Result: \n";
-    // for (size_t i = 0; i < num_indices; i++) {
-    //     std::cout << "i: " << i << ", in[i]: " << in[i].to_float() << ", " << "out[i]: " << out_b16_vec[i].to_float()
-    //     << "\n";
-    // }
-    // std::cout << std::endl;
+    for (size_t i = 0; i < num_indices; i++) {
+        // std::cout << "i: " << i << ", in[i]: " << in[i].to_float() << ", " << "out[i]: " << out_b16_vec[i].to_float()
+        // std::cout << "i: " << i << ": " << out_b16_vec[i].to_float() << "\n";
+    }
+    std::cout << std::endl;
 
     // Validate output of gather operation.
     // out[i] == in[idx[i]]
@@ -170,7 +171,7 @@ int main(int argc, char **argv) {
         // std::cout << "out: " << out_b16_vec[i].to_float() << "\n";
 
         is_close(input.to_float(), output.to_float());
-        std::cout << "\n";
+        // std::cout << "\n";
     }
 
     CloseDevice(device);
