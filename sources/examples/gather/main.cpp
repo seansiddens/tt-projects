@@ -29,8 +29,8 @@ int main(int argc, char **argv) {
 
     InterleavedBufferConfig data_dram_config{
         .device = device,
-        .size = b16_tile_size * data_ntiles,
-        .page_size = b16_tile_size,
+        .size = b16_tile_size * data_ntiles * 32,  // accesses need to be 32 byte aligned,
+        .page_size = b16_tile_size * data_ntiles * 32,
         .buffer_type = BufferType::DRAM};
     InterleavedBufferConfig index_dram_config{
         .device = device,
@@ -60,10 +60,12 @@ int main(int argc, char **argv) {
     std::cout << "Index vec:\n";
     std::vector<uint32_t> index_vec(num_indices, 0);
     for (size_t i = 0; i < index_vec.size(); i++) {
-        index_vec[i] = 16;
+        index_vec[i] = i;
     }
-    // index_vec[0] = 0;
-    // index_vec[1] = 0;
+    // index_vec[0] = 2;
+    // index_vec[1] = 2;
+    // index_vec[2] = 2;
+    // index_vec[3] = 2;
     // auto rng = std::mt19937{std::random_device{}()};  // or use time-based seed
     // std::shuffle(index_vec.begin(), index_vec.end(), rng);
     for (auto val : index_vec) {
@@ -76,18 +78,22 @@ int main(int argc, char **argv) {
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
     // std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(data_dram_config.size, 10, seed);
-    std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(data_dram_config.size, false);
-    std::vector<bfloat16> in_b16_vec = unpack_uint32_vec_into_bfloat16_vec(src0_vec);
-    std::cout << "Input vec size: " << in_b16_vec.size() << "\n";
-    for (auto val : in_b16_vec) {
-        std::cout << val.to_float() << " ";
+    // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(data_dram_config.size, false);
+    // std::vector<uint32_t> src0_vec = create_constant_vector_of_bfloat16(data_dram_config.size, -1.0F);
+    std::vector<bfloat16> in(data_dram_config.size / 2, bfloat16(-1.0F));
+    // float count = 0.0F;
+    for (size_t i = 0; i < in.size(); i++) {
+        in[i] = bfloat16(float(i / 16));
     }
+    std::vector<uint32_t> src0_vec = pack_bfloat16_vec_into_uint32_vec(in);
+    std::cout << "Input vec size: " << in.size() << "\n";
+    // for (auto val : in) {
+    //     std::cout << val.to_float() << " ";
+    // }
     std::cout << std::endl;
-    std::vector<uint32_t> src1_vec(1, 7);
 
     EnqueueWriteBuffer(cq, index_buffer, index_vec, true);
     EnqueueWriteBuffer(cq, src0_dram_buffer, src0_vec, true);
-    EnqueueWriteBuffer(cq, src1_dram_buffer, src1_vec, true);
     auto dst_initial_data = create_constant_vector_of_bfloat16(data_dram_config.size, -1.0F);
     EnqueueWriteBuffer(cq, dst_dram_buffer, dst_initial_data, true);
 
@@ -141,18 +147,24 @@ int main(int argc, char **argv) {
     std::vector<bfloat16> out_b16_vec = unpack_uint32_vec_into_bfloat16_vec(result_vec);
     std::cout << "Output vec size: " << out_b16_vec.size() << "\n";
 
-    std::cout << "Bfloat data:\n";
-    for (auto val : out_b16_vec) {
-        std::cout << val.to_float() << " ";
-    }
-    std::cout << std::endl;
+    // std::cout << "Bfloat data:\n";
+    // for (auto val : out_b16_vec) {
+    //     std::cout << val.to_float() << " ";
+    // }
+
+    // std::cout << "Result: \n";
+    // for (size_t i = 0; i < num_indices; i++) {
+    //     std::cout << "i: " << i << ", in[i]: " << in[i].to_float() << ", " << "out[i]: " << out_b16_vec[i].to_float()
+    //     << "\n";
+    // }
+    // std::cout << std::endl;
 
     // Validate output of gather operation.
     // out[i] == in[idx[i]]
     for (size_t i = 0; i < num_indices; i++) {
-        auto index = index_vec[i];
-        std::cout << "Index: " << index << ", ";
-        auto input = in_b16_vec[index];
+        auto index = index_vec[i] * 16;
+        std::cout << "i: " << i << ", Index: " << index << ", ";
+        auto input = in[index];
         std::cout << "in[" << index << "] = " << input.to_float() << ", ";
         auto output = out_b16_vec[i];
         std::cout << "out: " << out_b16_vec[i].to_float() << "\n";

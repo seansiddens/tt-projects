@@ -60,7 +60,7 @@ void kernel_main() {
             // DPRINT << "Index: " << index << "\n";
             // `index` is an index into the global input data DRAM buffer, we need to scale by the size of the data type
             // (sizeof(bfloat16) == 2)
-            uint32_t index_offset = index * 2;
+            uint32_t index_offset = index * 2 * 16;  // 32 byte aligned.
             uint32_t l1_offset =
                 j * 2;  // Need to correclty index into the L1 where we are storing the data values gathered.
             noc_async_read(src0_dram_noc_addr + index_offset, l1_write_addr_data + l1_offset, 2);
