@@ -1,0 +1,3 @@
+[submodule "sources/examples/current"]
+	path = sources/examples/current
+	url = git@github.com:seansiddens/current.git
