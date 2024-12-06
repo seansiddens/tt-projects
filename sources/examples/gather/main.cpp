@@ -19,15 +19,29 @@ int main(int argc, char **argv) {
     constexpr uint32_t tile_size = 1024;
     constexpr uint32_t b16_tile_size = 2 * tile_size;
     constexpr uint32_t u32_tile_size = 4 * tile_size;
-    InterleavedBufferConfig dram_config{
-        .device = device, .size = b16_tile_size, .page_size = b16_tile_size, .buffer_type = BufferType::DRAM};
+
+    uint32_t num_indices = 1024;
+    std::cout << "Number of indices: " << num_indices << "\n";
+    uint32_t index_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
+    std::cout << "index_ntiles: " << index_ntiles << "\n";
+    uint32_t data_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
+    std::cout << "data_ntiles: " << data_ntiles << "\n";
+
+    InterleavedBufferConfig data_dram_config{
+        .device = device,
+        .size = b16_tile_size * data_ntiles,
+        .page_size = b16_tile_size,
+        .buffer_type = BufferType::DRAM};
     InterleavedBufferConfig index_dram_config{
-        .device = device, .size = u32_tile_size, .page_size = u32_tile_size, .buffer_type = BufferType::DRAM};
+        .device = device,
+        .size = u32_tile_size * index_ntiles,
+        .page_size = u32_tile_size,
+        .buffer_type = BufferType::DRAM};
 
     std::shared_ptr<Buffer> index_buffer = CreateBuffer(index_dram_config);
-    std::shared_ptr<Buffer> src0_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<Buffer> src1_dram_buffer = CreateBuffer(dram_config);
-    std::shared_ptr<Buffer> dst_dram_buffer = CreateBuffer(dram_config);
+    std::shared_ptr<Buffer> src0_dram_buffer = CreateBuffer(data_dram_config);
+    std::shared_ptr<Buffer> src1_dram_buffer = CreateBuffer(data_dram_config);
+    std::shared_ptr<Buffer> dst_dram_buffer = CreateBuffer(data_dram_config);
 
     auto src0_dram_noc_coord = src0_dram_buffer->noc_coordinates();
     auto src1_dram_noc_coord = src1_dram_buffer->noc_coordinates();
@@ -44,10 +58,14 @@ int main(int argc, char **argv) {
 
     /* Create source data and write to DRAM */
     std::cout << "Index vec:\n";
-    std::vector<uint32_t> index_vec(1024, 0);
+    std::vector<uint32_t> index_vec(num_indices, 0);
     for (size_t i = 0; i < index_vec.size(); i++) {
         index_vec[i] = i;
-        std::cout << index_vec[i] << " ";
+    }
+    // auto rng = std::mt19937{std::random_device{}()};  // or use time-based seed
+    // std::shuffle(index_vec.begin(), index_vec.end(), rng);
+    for (auto val : index_vec) {
+        std::cout << val << " ";
     }
     std::cout << "\n";
 
@@ -55,8 +73,9 @@ int main(int argc, char **argv) {
     std::cout << "Src 0 vec:\n";
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-    std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(dram_config.size, 10, seed);
+    std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(data_dram_config.size, 10, seed);
     std::vector<bfloat16> in_b16_vec = unpack_uint32_vec_into_bfloat16_vec(src0_vec);
+    std::cout << "Input vec size: " << in_b16_vec.size() << "\n";
     for (auto val : in_b16_vec) {
         std::cout << val.to_float() << " ";
     }
@@ -104,6 +123,7 @@ int main(int argc, char **argv) {
             index_buffer->address(),
             index_dram_noc_x,
             index_dram_noc_y,
+            index_ntiles,
         });
 
     EnqueueProgram(cq, program, false);
@@ -114,6 +134,7 @@ int main(int argc, char **argv) {
     EnqueueReadBuffer(cq, dst_dram_buffer, result_vec, true);
 
     std::vector<bfloat16> out_b16_vec = unpack_uint32_vec_into_bfloat16_vec(result_vec);
+    std::cout << "Output vec size: " << out_b16_vec.size() << "\n";
 
     std::cout << "Bfloat data:\n";
     for (auto val : out_b16_vec) {
@@ -123,12 +144,16 @@ int main(int argc, char **argv) {
 
     // Validate output of gather operation.
     // out[i] == in[idx[i]]
-    for (size_t i = 0; i < index_vec.size(); i++) {
+    for (size_t i = 0; i < num_indices; i++) {
         auto index = index_vec[i];
-        auto input = in_b16_vec[i];
+        std::cout << "Index: " << index << ", ";
+        auto input = in_b16_vec[index];
+        std::cout << "in[" << index << "] = " << input.to_float() << ", ";
         auto output = out_b16_vec[i];
+        std::cout << "out: " << out_b16_vec[i].to_float() << "\n";
 
         is_close(input.to_float(), output.to_float());
+        std::cout << "\n";
     }
 
     CloseDevice(device);
