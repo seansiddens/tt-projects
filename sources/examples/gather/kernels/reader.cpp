@@ -1,7 +1,7 @@
 #include "dataflow_api.h"
 
 // constexpr uint32_t val = (0x40e0 << 16) | 0x40e0;
-constexpr uint16_t val = 0x40e0;
+constexpr uint16_t val = 0xbf80;
 
 void kernel_main() {
     uint32_t src0_dram = get_arg_val<uint32_t>(0);
@@ -30,8 +30,8 @@ void kernel_main() {
     // single-tile ublocks
     uint32_t data_tile_size = get_tile_size(cb_id_in0);
     uint32_t index_tile_size = get_tile_size(cb_id_in1);
-    DPRINT << "[READER] DATA TILE SIZE: " << data_tile_size;
-    DPRINT << "[READER] INDEX TILE SIZE: " << index_tile_size;
+    // DPRINT << "[READER] DATA TILE SIZE: " << data_tile_size;
+    // DPRINT << "[READER] INDEX TILE SIZE: " << index_tile_size;
 
     uint32_t l1_write_addr_data = get_write_ptr(cb_id_in0);
     uint32_t l1_write_addr_index = get_write_ptr(cb_id_in1);
@@ -50,7 +50,12 @@ void kernel_main() {
         noc_async_read_barrier();
 
         uint32_t* dat1 = (uint32_t*)l1_write_addr_index;
-        for (int j = 0; j < 8; j++) {
+        uint16_t* dat0 = (uint16_t*)l1_write_addr_data;
+        for (int j = 0; j < 1024; j++) {
+            dat0[j] = val;
+        }
+
+        for (int j = 0; j < 1024; j++) {
             uint32_t index = dat1[j];
             // DPRINT << "Index: " << index << "\n";
             // `index` is an index into the global input data DRAM buffer, we need to scale by the size of the data type
@@ -59,8 +64,8 @@ void kernel_main() {
             uint32_t l1_offset =
                 j * 2;  // Need to correclty index into the L1 where we are storing the data values gathered.
             noc_async_read(src0_dram_noc_addr + index_offset, l1_write_addr_data + l1_offset, 2);
+            noc_async_read_barrier();
         }
-        noc_async_read_barrier();
 
         // Write data from L1 circulr buffer (in0) -> DRAM
         noc_async_write(l1_write_addr_data, dst_dram_noc_addr + data_buf_offset, data_tile_size);

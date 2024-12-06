@@ -60,8 +60,10 @@ int main(int argc, char **argv) {
     std::cout << "Index vec:\n";
     std::vector<uint32_t> index_vec(num_indices, 0);
     for (size_t i = 0; i < index_vec.size(); i++) {
-        index_vec[i] = i;
+        index_vec[i] = 16;
     }
+    // index_vec[0] = 0;
+    // index_vec[1] = 0;
     // auto rng = std::mt19937{std::random_device{}()};  // or use time-based seed
     // std::shuffle(index_vec.begin(), index_vec.end(), rng);
     for (auto val : index_vec) {
@@ -73,7 +75,8 @@ int main(int argc, char **argv) {
     std::cout << "Src 0 vec:\n";
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-    std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(data_dram_config.size, 10, seed);
+    // std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(data_dram_config.size, 10, seed);
+    std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(data_dram_config.size, false);
     std::vector<bfloat16> in_b16_vec = unpack_uint32_vec_into_bfloat16_vec(src0_vec);
     std::cout << "Input vec size: " << in_b16_vec.size() << "\n";
     for (auto val : in_b16_vec) {
@@ -82,9 +85,11 @@ int main(int argc, char **argv) {
     std::cout << std::endl;
     std::vector<uint32_t> src1_vec(1, 7);
 
-    EnqueueWriteBuffer(cq, index_buffer, index_vec, false);
-    EnqueueWriteBuffer(cq, src0_dram_buffer, src0_vec, false);
-    EnqueueWriteBuffer(cq, src1_dram_buffer, src1_vec, false);
+    EnqueueWriteBuffer(cq, index_buffer, index_vec, true);
+    EnqueueWriteBuffer(cq, src0_dram_buffer, src0_vec, true);
+    EnqueueWriteBuffer(cq, src1_dram_buffer, src1_vec, true);
+    auto dst_initial_data = create_constant_vector_of_bfloat16(data_dram_config.size, -1.0F);
+    EnqueueWriteBuffer(cq, dst_dram_buffer, dst_initial_data, true);
 
     /* Use L1 circular buffers to set input buffers */
     constexpr uint32_t src0_cb_index = CB::c_in0;
@@ -126,7 +131,7 @@ int main(int argc, char **argv) {
             index_ntiles,
         });
 
-    EnqueueProgram(cq, program, false);
+    EnqueueProgram(cq, program, true);
     Finish(cq);
 
     /* Read in result into a host vector */
