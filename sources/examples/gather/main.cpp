@@ -163,11 +163,11 @@ int main(int argc, char **argv) {
     // out[i] == in[idx[i]]
     for (size_t i = 0; i < num_indices; i++) {
         auto index = index_vec[i] * 16;
-        std::cout << "i: " << i << ", Index: " << index << ", ";
+        // std::cout << "i: " << i << ", Index: " << index << ", ";
         auto input = in[index];
-        std::cout << "in[" << index << "] = " << input.to_float() << ", ";
+        // std::cout << "in[" << index << "] = " << input.to_float() << ", ";
         auto output = out_b16_vec[i];
-        std::cout << "out: " << out_b16_vec[i].to_float() << "\n";
+        // std::cout << "out: " << out_b16_vec[i].to_float() << "\n";
 
         is_close(input.to_float(), output.to_float());
         std::cout << "\n";
