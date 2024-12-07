@@ -13,6 +13,7 @@ enable_testing()
 # Current tests
 add_library(current_lib
     ${CMAKE_SOURCE_DIR}/sources/examples/current/stream.cpp
+    ${CMAKE_SOURCE_DIR}/sources/examples/current/kernel.cpp
 )
 
 # Link current_lib with sample_lib
