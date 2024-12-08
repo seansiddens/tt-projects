@@ -20,13 +20,14 @@ int main(int argc, char **argv) {
     constexpr uint32_t b16_tile_size = 2 * tile_size;
     constexpr uint32_t u32_tile_size = 4 * tile_size;
 
-    uint32_t num_indices = 1024 * 8;
+    uint32_t num_indices = 1024;
     std::cout << "Number of indices: " << num_indices << "\n";
     uint32_t index_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
     std::cout << "index_ntiles: " << index_ntiles << "\n";
     uint32_t data_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
     std::cout << "data_ntiles: " << data_ntiles << "\n";
 
+    std::cout << "dram page size: " << b16_tile_size * data_ntiles * 32;
     InterleavedBufferConfig input_data_dram_config{
         .device = device,
         .size = b16_tile_size * data_ntiles * 32,  // accesses need to be 32 byte aligned,
@@ -155,8 +156,8 @@ int main(int argc, char **argv) {
 
     // std::cout << "Result: \n";
     for (size_t i = 0; i < num_indices; i++) {
-        // std::cout << "i: " << i << ", in[i]: " << in[i].to_float() << ", " << "out[i]: " << out_b16_vec[i].to_float()
-        // std::cout << "i: " << i << ": " << out_b16_vec[i].to_float() << "\n";
+        // std::cout << "i: " << i << ", in[i]: " << in[i].to_float() << ", " << "out[i]: " <<
+        // out_b16_vec[i].to_float(); std::cout << "i: " << i << ": " << out_b16_vec[i].to_float() << "\n";
     }
     std::cout << std::endl;
 
@@ -164,11 +165,11 @@ int main(int argc, char **argv) {
     // out[i] == in[idx[i]]
     for (size_t i = 0; i < num_indices; i++) {
         auto index = index_vec[i] * 16;
-        // std::cout << "i: " << i << ", Index: " << index << ", ";
+        std::cout << "i: " << i << ", Index: " << index << ", ";
         auto input = in[index];
-        // std::cout << "in[" << index << "] = " << input.to_float() << ", ";
+        std::cout << "in[" << index << "] = " << input.to_float() << ", ";
         auto output = out_b16_vec[i];
-        // std::cout << "out: " << out_b16_vec[i].to_float() << "\n";
+        std::cout << "out: " << out_b16_vec[i].to_float() << "\n";
 
         is_close(input.to_float(), output.to_float());
         // std::cout << "\n";
