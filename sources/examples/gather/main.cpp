@@ -3,6 +3,7 @@
 #include "common/bfloat16.hpp"
 #include "host_api.hpp"
 #include "impl/device/device.hpp"
+#include "tt_metal/detail/tt_metal.hpp"
 
 using namespace tt;
 using namespace tt::tt_metal;
@@ -26,12 +27,20 @@ int main(int argc, char **argv) {
     std::cout << "index_ntiles: " << index_ntiles << "\n";
     uint32_t data_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
     std::cout << "data_ntiles: " << data_ntiles << "\n";
-
-    std::cout << "dram page size: " << b16_tile_size * data_ntiles * 32;
     InterleavedBufferConfig input_data_dram_config{
         .device = device,
         .size = b16_tile_size * data_ntiles * 32,  // accesses need to be 32 byte aligned,
         .page_size = b16_tile_size * data_ntiles * 32,
+        .buffer_type = BufferType::DRAM};
+    InterleavedBufferConfig input_data_sram_config{
+        .device = device,
+        .size = b16_tile_size * data_ntiles,
+        .page_size = b16_tile_size * data_ntiles,
+        .buffer_type = BufferType::L1};
+    InterleavedBufferConfig output_data_sram_config{
+        .device = device,
+        .size = b16_tile_size * data_ntiles,
+        .page_size = b16_tile_size * data_ntiles,
         .buffer_type = BufferType::DRAM};
     InterleavedBufferConfig index_dram_config{
         .device = device,
@@ -41,18 +50,17 @@ int main(int argc, char **argv) {
         .buffer_type = BufferType::DRAM};
 
     std::shared_ptr<Buffer> index_buffer = CreateBuffer(index_dram_config);
-    std::shared_ptr<Buffer> src0_dram_buffer = CreateBuffer(input_data_dram_config);
-    std::shared_ptr<Buffer> src1_dram_buffer = CreateBuffer(input_data_dram_config);
-    std::shared_ptr<Buffer> dst_dram_buffer = CreateBuffer(input_data_dram_config);
+    std::shared_ptr<Buffer> src0_buffer = CreateBuffer(input_data_sram_config);
+    std::shared_ptr<Buffer> dst_dram_buffer = CreateBuffer(output_data_sram_config);
 
-    auto src0_dram_noc_coord = src0_dram_buffer->noc_coordinates();
-    auto src1_dram_noc_coord = src1_dram_buffer->noc_coordinates();
+    auto src0_dram_noc_coord = src0_buffer->noc_coordinates();
+    // auto src1_dram_noc_coord = src1_dram_buffer->noc_coordinates();
     auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
     auto index_dram_noc_coord = index_buffer->noc_coordinates();
     uint32_t src0_dram_noc_x = src0_dram_noc_coord.x;
     uint32_t src0_dram_noc_y = src0_dram_noc_coord.y;
-    uint32_t src1_dram_noc_x = src1_dram_noc_coord.x;
-    uint32_t src1_dram_noc_y = src1_dram_noc_coord.y;
+    // uint32_t src1_dram_noc_x = src1_dram_noc_coord.x;
+    // uint32_t src1_dram_noc_y = src1_dram_noc_coord.y;
     uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
     uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
     uint32_t index_dram_noc_x = index_dram_noc_coord.x;
@@ -76,27 +84,37 @@ int main(int argc, char **argv) {
     std::cout << "\n";
 
     // std::vector<uint32_t> src0_vec(1, 14);
+    std::cout << "Data buffer size: " << input_data_sram_config.size << "\n";
     std::cout << "Src 0 vec:\n";
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
     auto seed = std::chrono::system_clock::now().time_since_epoch().count();
     // std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(data_dram_config.size, 10, seed);
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(data_dram_config.size, false);
     // std::vector<uint32_t> src0_vec = create_constant_vector_of_bfloat16(data_dram_config.size, -1.0F);
-    std::vector<bfloat16> in(input_data_dram_config.size / 2, bfloat16(-1.0F));
-    // float count = 0.0F;
-    for (size_t i = 0; i < in.size(); i++) {
-        in[i] = bfloat16(float(i / 16));
-    }
-    std::vector<uint32_t> src0_vec = pack_bfloat16_vec_into_uint32_vec(in);
-    std::cout << "Input vec size: " << in.size() << "\n";
+    std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(input_data_sram_config.size, false);
+    auto in = unpack_uint32_vec_into_bfloat16_vec(src0_vec);
+    // for (size_t i = 0; i < src0_vec.size(); i++) {
+    //     src0_vec[i] = 0;
+    // }
+    // std::vector<uint32_t> src0_vec = create_constant_vector_of_bfloat16(input_data_sram_config.size, 0.0F);
+    // std::vector<uint32_t> src0_vec(input_data_sram_config.size / 4, 0);
+    // std::vector<bfloat16> in = unpack_uint32_vec_into_bfloat16_vec(src0_vec);
+    // std::vector<bfloat16> in(input_data_dram_config.size / 2, bfloat16(-1.0F));
+    // // float count = 0.0F;
+    // for (size_t i = 0; i < in.size(); i++) {
+    //     in[i] = bfloat16(float(i / 16));
+    // }
+    // std::vector<uint32_t> src0_vec = pack_bfloat16_vec_into_uint32_vec(in);
+    // std::cout << "Input vec size: " << in.size() << "\n";
     // for (auto val : in) {
     //     std::cout << val.to_float() << " ";
     // }
-    std::cout << std::endl;
+    // std::cout << std::endl;
 
     EnqueueWriteBuffer(cq, index_buffer, index_vec, true);
-    EnqueueWriteBuffer(cq, src0_dram_buffer, src0_vec, true);
-    auto dst_initial_data = create_constant_vector_of_bfloat16(input_data_dram_config.size, -1.0F);
+    // EnqueueWriteBuffer(cq, src0_buffer, src0_vec, true);
+    tt::tt_metal::detail::WriteToDeviceL1(device, core, src0_buffer->address(), src0_vec);
+    auto dst_initial_data = create_constant_vector_of_bfloat16(output_data_sram_config.size, -1.0F);
     EnqueueWriteBuffer(cq, dst_dram_buffer, dst_initial_data, true);
 
     /* Use L1 circular buffers to set input buffers */
@@ -124,13 +142,10 @@ int main(int argc, char **argv) {
         binary_reader_kernel_id,
         core,
         {
-            src0_dram_buffer->address(),
-            src1_dram_buffer->address(),
+            src0_buffer->address(),
             dst_dram_buffer->address(),
             src0_dram_noc_x,
             src0_dram_noc_y,
-            src1_dram_noc_x,
-            src1_dram_noc_y,
             dst_dram_noc_x,
             dst_dram_noc_y,
             index_buffer->address(),
@@ -149,22 +164,22 @@ int main(int argc, char **argv) {
     std::vector<bfloat16> out_b16_vec = unpack_uint32_vec_into_bfloat16_vec(result_vec);
     std::cout << "Output vec size: " << out_b16_vec.size() << "\n";
 
-    // std::cout << "Bfloat data:\n";
-    // for (auto val : out_b16_vec) {
-    //     std::cout << val.to_float() << " ";
-    // }
+    std::cout << "Bfloat data:\n";
+    for (auto val : out_b16_vec) {
+        std::cout << val.to_float() << " ";
+    }
 
     // std::cout << "Result: \n";
-    for (size_t i = 0; i < num_indices; i++) {
-        // std::cout << "i: " << i << ", in[i]: " << in[i].to_float() << ", " << "out[i]: " <<
-        // out_b16_vec[i].to_float(); std::cout << "i: " << i << ": " << out_b16_vec[i].to_float() << "\n";
-    }
-    std::cout << std::endl;
+    // for (size_t i = 0; i < num_indices; i++) {
+    //     std::cout << "i: " << i << ", in[i]: " << in[i].to_float() << ", " << "out[i]: " << out_b16_vec[i].to_float()
+    //     << "\n";
+    // }
+    // std::cout << std::endl;
 
     // Validate output of gather operation.
     // out[i] == in[idx[i]]
     for (size_t i = 0; i < num_indices; i++) {
-        auto index = index_vec[i] * 16;
+        auto index = index_vec[i];
         std::cout << "i: " << i << ", Index: " << index << ", ";
         auto input = in[index];
         std::cout << "in[" << index << "] = " << input.to_float() << ", ";
