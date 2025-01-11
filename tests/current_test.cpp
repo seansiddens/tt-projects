@@ -11,6 +11,7 @@
 #include "common.hpp"
 #include "common/bfloat16.hpp"
 #include "common/tt_backend_api_types.hpp"
+#include "map.hpp"
 #include "stream.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -157,7 +158,7 @@ TEST(CurrentTests, Pipeline) {
 
 TEST(CurrentTests, GatherTest) {
     // uint32_t num_indices = 1024 * 1024 * 256;
-    uint32_t num_indices = 1024;
+    uint32_t num_indices = 2048 * 16;
     uint32_t data_buffer_size = 1024 * 256;
     auto type = tt::DataFormat::Float16_b;
     auto n_tiles = static_cast<uint32_t>(std::ceil(num_indices / static_cast<double>(TILE_SIZE)));
@@ -328,7 +329,7 @@ TEST(CurrentTests, GatherTestSRAM) {
 
 TEST(CurrentTests, GatherTestMultipleAccesses) {
     // uint32_t num_indices = 1024 * 1024 * 256;
-    uint32_t num_indices = 2048;
+    uint32_t num_indices = 2048 * 16;
     uint32_t data_buffer_n_elements = 1024 * 256;
     uint8_t accesses_per_token = 2;
     assert(num_indices % accesses_per_token == 0 && "Accesses per token must evenly divide indices!\n");
@@ -352,9 +353,9 @@ TEST(CurrentTests, GatherTestMultipleAccesses) {
     // std::vector<uint32_t> data_buffer =
     //     create_constant_vector_of_bfloat16(TILE_SIZE * n_tiles * datum_size(type), -1.0F);
     // std::vector<uint32_t> data_buffer = create_arange_vector_of_bfloat16(data_tile_size * n_tiles, false);
-    // std::vector<uint32_t> data_buffer = create_arange_vector_of_bfloat16(data_buffer_n_elements * 2, false);
-    std::vector<uint32_t> data_buffer = create_random_vector_of_bfloat16(data_buffer_n_elements * 2, max_float, seed);
-    // std::vector<uint32_t> data_buffer = create_constant_vector_of_bfloat16(TILE_SIZE * n_tiles *
+    std::vector<uint32_t> data_buffer = create_arange_vector_of_bfloat16(data_buffer_n_elements * 2, false);
+    // std::vector<uint32_t> data_buffer = create_random_vector_of_bfloat16(data_buffer_n_elements * 2, max_float,
+    // seed); std::vector<uint32_t> data_buffer = create_constant_vector_of_bfloat16(TILE_SIZE * n_tiles *
     // datum_size(type), 2.0F); std::vector<uint32_t> data_buffer = std::vector<uint32_t>(64, 0U); for (size_t i = 0; i
     // < data_buffer.size(); i++) {
     //     data_buffer[i] = i;
@@ -364,9 +365,11 @@ TEST(CurrentTests, GatherTestMultipleAccesses) {
     std::cout << "Index vec: \n";
     for (size_t i = 0; i < num_indices / accesses_per_token; i++) {
         // auto idx = dist(rng);
-        index_vec[i * 2] = dist(rng);
+        // index_vec[i * 2] = dist(rng);
+        index_vec[i * 2] = i / 2;
         // std::cout << i * 2 << ": " << index_vec[i * 2] << "\n";
-        index_vec[i * 2 + 1] = dist(rng);
+        // index_vec[i * 2 + 1] = dist(rng);
+        index_vec[i * 2 + 1] = i / 2;
         // std::cout << i * 2 + 1 << ": " << index_vec[i * 2 + 1] << "\n";
     }
 
@@ -386,7 +389,7 @@ TEST(CurrentTests, GatherTestMultipleAccesses) {
 
     kernel_a.set_compute_kernel(
         R"(
-        out0 = (in0 + in1) * 0.5;
+        out0 = in1;
     )",
         false);
 
@@ -433,13 +436,14 @@ TEST(CurrentTests, GatherTestMultipleAccesses) {
         auto output = out_b16_vec[i];
 
         // Expected output is average of the two gathered values
-        float expected = (input1.to_float() + input2.to_float()) * 0.5f;
+        // float expected = (input1.to_float() + input2.to_float()) * 0.5f;
+        float expected = input1.to_float();
 
-        // std::cout << "Token " << i << ": "
-        //           << "index1=" << index1 << " val1=" << input1.to_float() << ", "
-        //           << "index2=" << index2 << " val2=" << input2.to_float() << ", "
-        //           << "expected=" << expected << ", "
-        //           << "got=" << output.to_float() << "\n";
+        std::cout << "Token " << i << ": "
+                  << "index1=" << index1 << " val1=" << input1.to_float() << ", "
+                  << "index2=" << index2 << " val2=" << input2.to_float() << ", "
+                  << "expected=" << expected << ", "
+                  << "got=" << output.to_float() << "\n";
 
         pass &= is_close(expected, output.to_float());
     }
@@ -448,7 +452,7 @@ TEST(CurrentTests, GatherTestMultipleAccesses) {
 
 TEST(CurrentTests, GatherTestMultipleAccessesSRAM) {
     // uint32_t num_indices = 1024 * 1024 * 256;
-    uint32_t num_indices = 2048 * 2;
+    uint32_t num_indices = 1024 * 2 * 16;
     uint32_t data_buffer_n_elements = 1024 * 256;
     uint8_t accesses_per_token = 2;
     assert(num_indices % accesses_per_token == 0 && "Accesses per token must evenly divide indices!\n");
@@ -474,6 +478,7 @@ TEST(CurrentTests, GatherTestMultipleAccessesSRAM) {
     // std::vector<uint32_t> data_buffer = create_arange_vector_of_bfloat16(data_tile_size * n_tiles, false);
     // std::vector<uint32_t> data_buffer = create_arange_vector_of_bfloat16(data_buffer_n_elements * 2, false);
     std::vector<uint32_t> data_buffer = create_random_vector_of_bfloat16(data_buffer_n_elements * 2, max_float, seed);
+    // std::vector<uint32_t> data_buffer = create_constant_vector_of_bfloat16(data_buffer_n_elements * 2, 2.0F);
     // std::vector<uint32_t> data_buffer = create_constant_vector_of_bfloat16(TILE_SIZE * n_tiles *
     // datum_size(type), 2.0F); std::vector<uint32_t> data_buffer = std::vector<uint32_t>(64, 0U); for (size_t i = 0; i
     // < data_buffer.size(); i++) {
@@ -482,12 +487,14 @@ TEST(CurrentTests, GatherTestMultipleAccessesSRAM) {
     std::uniform_int_distribution<uint32_t> dist(0, data_buffer_n_elements - 1);
     auto index_vec = std::vector<uint32_t>(num_indices, 0);
     std::cout << "Index vec: \n";
-    for (size_t i = 0; i < 1024 * 2; i++) {
+    for (size_t i = 0; i < num_indices / accesses_per_token; i++) {
         // auto idx = dist(rng);
         index_vec[i * 2] = dist(rng);
-        std::cout << i * 2 << ": " << index_vec[i * 2] << "\n";
+        // index_vec[i * 2] = i / 2;
+        // std::cout << i * 2 << ": " << index_vec[i * 2] << "\n";
         index_vec[i * 2 + 1] = dist(rng);
-        std::cout << i * 2 + 1 << ": " << index_vec[i * 2 + 1] << "\n";
+        // index_vec[i * 2 + 1] = i / 2;
+        // std::cout << i * 2 + 1 << ": " << index_vec[i * 2 + 1] << "\n";
     }
 
     // If accesseses_per_token > 1, then output_data.size() < num_indices
@@ -514,7 +521,7 @@ TEST(CurrentTests, GatherTestMultipleAccessesSRAM) {
     bool use_sram = true;
     current::GatherStream gather_stream(
         data_buffer, type, data_buffer_n_elements, index_vec, use_sram, accesses_per_token);
-    current::Stream sink(output_data, data_buffer_n_elements, type);
+    current::Stream sink(output_data, num_indices / accesses_per_token, type);
 
     // Define connections between streams and kernels.
     auto max_parallelization_factor = 1;

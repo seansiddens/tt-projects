@@ -14,6 +14,7 @@ enable_testing()
 add_library(current_lib
     ${CMAKE_SOURCE_DIR}/sources/examples/current/stream.cpp
     ${CMAKE_SOURCE_DIR}/sources/examples/current/kernel.cpp
+    ${CMAKE_SOURCE_DIR}/sources/examples/current/map.cpp
 )
 
 # Link current_lib with sample_lib
