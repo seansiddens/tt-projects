@@ -41,6 +41,21 @@ target_link_libraries(current_tests
     GTest::gtest_main
 )
 
+# e2e tests.
+# Create your test executable
+add_executable(current_e2e_tests
+    current_e2e_tests.cpp
+)
+
+# Link against your library
+target_link_libraries(current_e2e_tests
+    PRIVATE
+    current_lib
+    sample_lib
+    GTest::gtest_main
+)
+
 include(GoogleTest)
 # gtest_discover_tests(sample_tests)
 gtest_discover_tests(current_tests)
+gtest_discover_tests(current_e2e_tests)
