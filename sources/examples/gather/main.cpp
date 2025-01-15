@@ -22,10 +22,12 @@ int main(int argc, char **argv) {
     constexpr uint32_t u32_tile_size = 4 * tile_size;
 
     uint32_t num_indices = 1024;
+    uint8_t accesses_per_token = 2;
+    assert(1024 % accesses_per_token == 0);
     std::cout << "Number of indices: " << num_indices << "\n";
     uint32_t index_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
     std::cout << "index_ntiles: " << index_ntiles << "\n";
-    uint32_t data_ntiles = std::ceil(static_cast<float>(num_indices) / tile_size);
+    uint32_t data_ntiles = std::ceil(static_cast<float>(num_indices / accesses_per_token) / tile_size);
     std::cout << "data_ntiles: " << data_ntiles << "\n";
     InterleavedBufferConfig input_data_dram_config{
         .device = device,

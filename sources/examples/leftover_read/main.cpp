@@ -1,6 +1,7 @@
 #include <chrono>
 
 #include "common/bfloat16.hpp"
+#include "common/logger.hpp"
 #include "host_api.hpp"
 #include "impl/buffers/buffer.hpp"
 #include "impl/device/device.hpp"
@@ -18,40 +19,35 @@ int main(int argc, char **argv) {
     Program program = CreateProgram();
     constexpr CoreCoord core = {0, 0};
 
-    auto num_tiles = 1;
+    uint32_t num_tiles = 1;
     constexpr uint32_t tile_size = 1024;
-    constexpr uint32_t b16_tile_size = 2 * tile_size;
+    constexpr uint32_t b16_tile_size_bytes = 2 * tile_size;
+
+    auto l1_size = device->l1_size_per_core();
+    tt::log_info("L1 size: {}:", l1_size);
+    uint32_t max_l1_size = l1_size / 2 - L1_UNRESERVED_BASE;
+    tt::log_info("Max L1 size: {}", max_l1_size);
 
     InterleavedBufferConfig dram_config{
         .device = device,
-        .size = b16_tile_size * num_tiles,
-        .page_size = b16_tile_size * num_tiles,
+        .size = b16_tile_size_bytes * num_tiles,
+        .page_size = b16_tile_size_bytes * num_tiles,
         .buffer_type = BufferType::DRAM};
 
     InterleavedBufferConfig sram_config{
-        .device = device,
-        .size = b16_tile_size * num_tiles,
-        .page_size = b16_tile_size * num_tiles,
-        .buffer_type = BufferType::L1};
+        .device = device, .size = max_l1_size, .page_size = max_l1_size, .buffer_type = BufferType::L1};
 
     std::shared_ptr<Buffer> input_dram = CreateBuffer(dram_config);
     std::shared_ptr<Buffer> output_dram = CreateBuffer(dram_config);
     std::shared_ptr<Buffer> sram_buf = CreateBuffer(sram_config);
-    auto input_dram_address = input_dram->address();
-    auto output_dram_address = output_dram->address();
-
-    // auto src0_dram_noc_coord = src0_buffer->noc_coordinates();
-    // auto src1_dram_noc_coord = src1_dram_buffer->noc_coordinates();
-    // auto dst_dram_noc_coord = dst_dram_buffer->noc_coordinates();
-    // auto index_dram_noc_coord = index_buffer->noc_coordinates();
-    // uint32_t src0_dram_noc_x = src0_dram_noc_coord.x;
-    // uint32_t src0_dram_noc_y = src0_dram_noc_coord.y;
-    // uint32_t src1_dram_noc_x = src1_dram_noc_coord.x;
-    // uint32_t src1_dram_noc_y = src1_dram_noc_coord.y;
-    // uint32_t dst_dram_noc_x = dst_dram_noc_coord.x;
-    // uint32_t dst_dram_noc_y = dst_dram_noc_coord.y;
-    // uint32_t index_dram_noc_x = index_dram_noc_coord.x;
-    // uint32_t index_dram_noc_y = index_dram_noc_coord.y;
+    uint32_t input_dram_address = input_dram->address();
+    auto input_dram_coords = input_dram->noc_coordinates();
+    uint32_t input_dram_x = input_dram_coords.x;
+    uint32_t input_dram_y = input_dram_coords.y;
+    uint32_t output_dram_address = output_dram->address();
+    auto output_dram_coords = output_dram->noc_coordinates();
+    uint32_t output_dram_x = output_dram_coords.x;
+    uint32_t output_dram_y = output_dram_coords.y;
 
     /* Create source data and write to DRAM */
     // std::cout << "Index vec:\n";
@@ -75,7 +71,9 @@ int main(int argc, char **argv) {
     // std::cout << "Src 0 vec:\n";
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(dram_config.size, false);
     // auto seed = std::chrono::system_clock::now().time_since_epoch().count();
-    // std::vector<uint32_t> src0_vec = create_random_vector_of_bfloat16(data_dram_config.size, 10, seed);
+    float canary_val = 564.0F;
+    std::vector<uint32_t> input_dram_data = create_constant_vector_of_bfloat16(sram_config.size, canary_val);
+    // std::vector<uint32_t> input_dram_data = create_random_vector_of_bfloat16(dram_config.size, 10, seed);
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(data_dram_config.size, false);
     // std::vector<uint32_t> src0_vec = create_constant_vector_of_bfloat16(data_dram_config.size, -1.0F);
     // std::vector<uint32_t> src0_vec = create_arange_vector_of_bfloat16(input_data_sram_config.size, false);
@@ -98,28 +96,33 @@ int main(int argc, char **argv) {
     // }
     // std::cout << std::endl;
 
-    // EnqueueWriteBuffer(cq, index_buffer, index_vec, true);
+    // EnqueueWriteBuffer(cq, input_dram, input_dram_data, true);
     // // EnqueueWriteBuffer(cq, src0_buffer, src0_vec, true);
-    // tt::tt_metal::detail::WriteToDeviceL1(device, core, src0_buffer->address(), src0_vec);
-    // auto dst_initial_data = create_constant_vector_of_bfloat16(output_data_sram_config.size, -1.0F);
-    // EnqueueWriteBuffer(cq, dst_dram_buffer, dst_initial_data, true);
+
+    // tt::tt_metal::detail::WriteToDeviceL1(device, core, sram_buf->address(), input_dram_data);
+    // tt::log_info("Wrote {} bytes to SRAM on core {}", input_dram_data.size() * sizeof(uint32_t), core);
+
+    std::vector<uint32_t> out_data;
+    tt::tt_metal::detail::ReadFromDeviceL1(device, core, sram_buf->address(), sram_config.size, out_data);
+    std::vector<bfloat16> out = unpack_uint32_vec_into_bfloat16_vec(out_data);
+    for (size_t i = 0; i < sram_config.size / 2; i++) {
+        std::cout << i << ": " << out[i].to_float() << "\n";
+    }
+
+    // auto output_dram_data = create_constant_vector_of_bfloat16(dram_config.size, -1.0F);
+    // EnqueueWriteBuffer(cq, output_dram, output_dram_data, true);
 
     // /* Use L1 circular buffers to set input buffers */
     // constexpr uint32_t src0_cb_index = CB::c_in0;
     // CircularBufferConfig cb_src0_config =
-    //     CircularBufferConfig(b16_tile_size, {{src0_cb_index, tt::DataFormat::Float16_b}})
-    //         .set_page_size(src0_cb_index, b16_tile_size);
+    //     CircularBufferConfig(b16_tile_size_bytes, {{src0_cb_index, tt::DataFormat::Float16_b}})
+    //         .set_page_size(src0_cb_index, b16_tile_size_bytes);
     // CBHandle cb_src0 = tt_metal::CreateCircularBuffer(program, core, cb_src0_config);
 
-    // constexpr uint32_t src1_cb_index = CB::c_in1;
-    // CircularBufferConfig cb_src1_config = CircularBufferConfig(1024 * 4, {{src1_cb_index, tt::DataFormat::UInt32}})
-    //                                           .set_page_size(src1_cb_index, 1024 * 4);
-    // CBHandle cb_src1 = tt_metal::CreateCircularBuffer(program, core, cb_src1_config);
-
-    // /* Specify data movement kernel for reading/writing data to/from DRAM */
+    /* Specify data movement kernel for reading/writing data to/from DRAM */
     // KernelHandle binary_reader_kernel_id = CreateKernel(
     //     program,
-    //     "sources/examples/gather/kernels/reader.cpp",
+    //     "sources/examples/leftover_write/kernels/reader.cpp",
     //     core,
     //     DataMovementConfig{.processor = DataMovementProcessor::RISCV_0, .noc = NOC::RISCV_0_default});
 
@@ -129,16 +132,13 @@ int main(int argc, char **argv) {
     //     binary_reader_kernel_id,
     //     core,
     //     {
-    //         src0_buffer->address(),
-    //         dst_dram_buffer->address(),
-    //         src0_dram_noc_x,
-    //         src0_dram_noc_y,
-    //         dst_dram_noc_x,
-    //         dst_dram_noc_y,
-    //         index_buffer->address(),
-    //         index_dram_noc_x,
-    //         index_dram_noc_y,
-    //         index_ntiles,
+    //         input_dram_address,
+    //         input_dram_x,
+    //         input_dram_y,
+    //         output_dram_address,
+    //         output_dram_x,
+    //         output_dram_y,
+    //         num_tiles
     //     });
 
     // EnqueueProgram(cq, program, true);
