@@ -1,12 +1,14 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <ctime>
 #include <random>
 
 #include "common.hpp"
 #include "common/bfloat16.hpp"
+#include "common/logger.hpp"
 #include "common/tt_backend_api_types.hpp"
 #include "map.hpp"
 #include "stream.hpp"
@@ -15,6 +17,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
 #include "stb_image_write.h"
+
+using namespace std;
 
 TEST(CurrentTests, B16EltwiseSAXPY) {
     uint32_t count = 1024 * 512;
@@ -86,6 +90,152 @@ TEST(CurrentTests, B16EltwiseSAXPY) {
         pass &= is_close(expected.to_float(), out_bf16[i].to_float());
     }
     EXPECT_TRUE(pass);
+}
+
+TEST(CurrentTests, STREAM_COPY) {
+    constexpr int NUM_ITERATIONS = 1;
+    constexpr double SCALAR = 3.0;
+
+    std::vector<size_t> sizes = {
+        1000000,   // 1M
+        10000000,  // 10M
+        100000000  // 100M
+    };
+
+    uint32_t count = ((sizes[0] + TILE_SIZE - 1) / TILE_SIZE) * TILE_SIZE;
+    auto type = tt::DataFormat::Float16_b;
+    uint32_t n_tiles = std::ceil(count / TILE_SIZE);
+    tt::log_info("Count: {}, Num tiles: {}", count, n_tiles);
+
+    int seed = static_cast<int>(std::time(nullptr));
+    std::mt19937 rng(seed);
+
+    // Stream data.
+    constexpr auto max_float = 10.0F;
+
+    std::vector<chrono::steady_clock::duration> durations(NUM_ITERATIONS);
+    // COPY a[i] = b[i]
+    for (size_t n = 0; n < NUM_ITERATIONS; n++) {
+        std::vector<uint32_t> a_initial_data =
+            create_constant_vector_of_bfloat16(TILE_SIZE * n_tiles * datum_size(type), -1.0F);
+        std::vector<uint32_t> b_initial_data =
+            create_random_vector_of_bfloat16(TILE_SIZE * n_tiles * datum_size(type), max_float, seed);
+
+        // Init kernel.
+        current::Kernel kernel_a;
+
+        // Define ports and set compute kernel.
+        kernel_a.add_input_port("in0", type);
+        kernel_a.add_output_port("out0", type);
+        kernel_a.set_compute_kernel(
+            R"(
+            out0 = in0;
+        )",
+            false);
+
+        // Define streams.
+        current::Stream source0(b_initial_data, count, type);
+        current::Stream sink(a_initial_data, count, type);
+
+        // Define connections between streams and kernels.
+        // TODO: Fails when this is an odd # (something to do w/ how work is split).
+        auto max_parallelization_factor = 1;
+        auto tiles_per_cb = 1;
+        current::Map map({&kernel_a}, {&source0, &sink}, max_parallelization_factor, tiles_per_cb);
+        map.add_connection(&source0, &kernel_a, "in0");
+        map.add_connection(&kernel_a, "out0", &sink);
+
+        // Execute program.
+        auto duration = map.execute();
+
+        // Validate output.
+        auto a_out = unpack_uint32_vec_into_bfloat16_vec(map.read_stream(&sink));
+        EXPECT_EQ(a_out.size(), TILE_SIZE * n_tiles);
+
+        auto b_in = unpack_uint32_vec_into_bfloat16_vec(b_initial_data);
+        bool pass = true;
+        for (size_t i = 0; i < sink.size(); i++) {
+            auto expected = b_in[i];
+            pass &= is_close(expected.to_float(), a_out[i].to_float());
+        }
+        EXPECT_TRUE(pass);
+        durations[n] = duration;
+    }
+}
+
+TEST(CurrentTests, STREAM_SCALE) {
+    constexpr int NUM_ITERATIONS = 1;
+    constexpr float SCALAR = 3.0;
+
+    std::vector<size_t> sizes = {
+        1000000,   // 1M
+        10000000,  // 10M
+        100000000  // 100M
+    };
+
+    uint32_t count = ((sizes[0] + TILE_SIZE - 1) / TILE_SIZE) * TILE_SIZE;
+    auto type = tt::DataFormat::Float16_b;
+    uint32_t n_tiles = std::ceil(count / TILE_SIZE);
+    tt::log_info("Count: {}, Num tiles: {}", count, n_tiles);
+
+    int seed = static_cast<int>(std::time(nullptr));
+    std::mt19937 rng(seed);
+
+    // Stream data.
+    constexpr auto max_float = 10.0F;
+
+    std::vector<chrono::steady_clock::duration> durations(NUM_ITERATIONS);
+    // COPY a[i] = b[i]
+    for (size_t n = 0; n < NUM_ITERATIONS; n++) {
+        std::vector<uint32_t> a_initial_data =
+            create_constant_vector_of_bfloat16(TILE_SIZE * n_tiles * datum_size(type), -1.0F);
+        std::vector<uint32_t> b_initial_data =
+            create_random_vector_of_bfloat16(TILE_SIZE * n_tiles * datum_size(type), max_float, seed);
+
+        // Init kernel.
+        current::Kernel kernel_a;
+
+        // Define ports and set compute kernel.
+        kernel_a.add_input_port("in0", type);
+        kernel_a.add_output_port("out0", type);
+        kernel_a.set_compute_kernel(
+            fmt::format(
+                R"(
+            out0 = in0 * {:.2f};
+        )",
+                SCALAR),
+            false);
+
+        // Define streams.
+        current::Stream source0(b_initial_data, count, type);
+        current::Stream sink(a_initial_data, count, type);
+
+        // Define connections between streams and kernels.
+        // TODO: Fails when this is an odd # (something to do w/ how work is split).
+        auto max_parallelization_factor = 1;
+        auto tiles_per_cb = 1;
+        current::Map map({&kernel_a}, {&source0, &sink}, max_parallelization_factor, tiles_per_cb);
+        map.add_connection(&source0, &kernel_a, "in0");
+        map.add_connection(&kernel_a, "out0", &sink);
+
+        // Execute program.
+        auto duration = map.execute();
+
+        // Validate output.
+        auto a_out = unpack_uint32_vec_into_bfloat16_vec(map.read_stream(&sink));
+        EXPECT_EQ(a_out.size(), TILE_SIZE * n_tiles);
+
+        auto b_in = unpack_uint32_vec_into_bfloat16_vec(b_initial_data);
+        bool pass = true;
+        for (size_t i = 0; i < sink.size(); i++) {
+            // std::cout << "in: " << b_in[i].to_float();
+            // std::cout << "out: " << a_out[i].to_float();
+            auto expected = bfloat16(b_in[i].to_float() * SCALAR);
+            pass &= is_close(expected.to_float(), a_out[i].to_float());
+        }
+        EXPECT_TRUE(pass);
+        durations[n] = duration;
+    }
 }
 
 // Performs a horizontal-only box blur on a single-channel float array
@@ -273,7 +423,7 @@ TEST(CurrentTests, BoxFilter) {
     std::cout << "Created output stream!\n";
 
     // Define connections between streams and kernels.
-    auto max_parallelization_factor = 1;
+    auto max_parallelization_factor = 2;
     auto tiles_per_cb = 1;
     current::Map map({&kernel_a}, {&gather_stream, &sink}, max_parallelization_factor, tiles_per_cb);
     map.add_connection(&gather_stream, &kernel_a, "in0");
